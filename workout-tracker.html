@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Ruben's Workout Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Workout" />
+  <meta name="theme-color" content="#111111" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: #111; font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+    ::-webkit-scrollbar { width: 0; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState, useEffect } = React;
+
+const SESSION = {
+  warmup: [
+    "Internal rotation (band)",
+    "External rotation (band)",
+    "Band shoulder extension (straight-arm pulldown)"
+  ],
+  exercises: [
+    { id: "chest-press",      name: "Chest Press Machine",        sets: 4, reps: "10–12", rest: "90s" },
+    { id: "lat-pulldown",     name: "Lat Pulldown",               sets: 4, reps: "10–12", rest: "90s", flagNote: "Stop 80% up — no full arm extension" },
+    { id: "leg-press",        name: "Leg Press",                  sets: 4, reps: "10–12", rest: "90s" },
+    { id: "leg-curl",         name: "Leg Curl",                   sets: 3, reps: "12–15", rest: "60s", note: "Slow on the way down" },
+    { id: "pec-deck",         name: "Pec Deck",                   sets: 3, reps: "12–15", rest: "75s", flagNote: "Don't let elbows pass your torso" },
+    { id: "reverse-pec-deck", sets: 3, reps: "12–15", rest: "60s", note: "Shoulder health priority — don't rush this",
+      variants: [
+        { key: "machine", label: "Machine", name: "Reverse Pec Deck" },
+        { key: "cable",   label: "Cable",   name: "Cable Rear Delt Fly" },
+      ]
+    },
+    {
+      id: "bicep", sets: 3, reps: "10–12", rest: "60s",
+      variants: [
+        { key: "machine", label: "Machine", name: "Bicep Machine" },
+        { key: "cable",   label: "Cable",   name: "Cable Bicep Curl", note: "Elbow stays tucked" },
+      ]
+    },
+    {
+      id: "tricep", sets: 3, reps: "10–12", rest: "60s",
+      variants: [
+        { key: "machine", label: "Machine", name: "Tricep Machine" },
+        { key: "cable",   label: "Cable",   name: "Cable Tricep Pushdown" },
+      ]
+    },
+  ]
+};
+
+const ls = {
+  get: (k, fallback) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+const mono = "'SF Mono','Fira Code','Courier New',monospace";
+const sans = "-apple-system,'SF Pro Display','Segoe UI',sans-serif";
+
+// Format "2026-05-10" → "10 May 2026"
+function fmtShort(dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return new Date(y, m-1, d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// ─── History Screen ───────────────────────────────────────────────────────────
+function HistoryScreen({ onBack }) {
+  const [history, setHistory] = useState(() => ls.get('wt-history', []));
+  const [expanded, setExpanded] = useState(null);
+
+  const del = (id) => {
+    const next = history.filter(h => h.id !== id);
+    setHistory(next);
+    ls.set('wt-history', next);
+    if (expanded === id) setExpanded(null);
+  };
+
+  const sorted = [...history].sort((a, b) => b.id - a.id);
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#111', color: '#f0f0f0', fontFamily: sans, maxWidth: 440, margin: '0 auto', paddingBottom: 60 }}>
+      <div style={{ padding: '28px 20px 16px', borderBottom: '1px solid #2a2a2a', position: 'sticky', top: 0, background: '#111', zIndex: 10 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, cursor: 'pointer', fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back</button>
+        <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>All Sessions</div>
+        <div style={{ fontSize: 26, fontWeight: 700, color: '#fff' }}>History</div>
+      </div>
+
+      <div style={{ padding: '16px 20px 0' }}>
+        {sorted.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#444' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+            <div style={{ fontSize: 14, fontFamily: mono }}>No sessions logged yet.</div>
+          </div>
+        )}
+
+        {sorted.map(entry => {
+          const isOpen  = expanded === entry.id;
+          const isCardio  = entry.entryType === 'cardio';
+          const dateLabel = fmtShort(entry.date);
+          const typeTag   = isCardio ? 'Cardio' : 'Weights';
+          const subtitle  = isCardio ? entry.cardioType : entry.session;
+          const tagColor  = isCardio ? '#4a9eff' : '#6dde6d';
+          const tagBg     = isCardio ? '#0a1a2e' : '#0d1f0d';
+          const tagBorder = isCardio ? '#1a3a5a' : '#2a5a2a';
+
+          return (
+            <div key={entry.id} style={{ marginBottom: 10, background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 14, overflow: 'hidden' }}>
+              <div onClick={() => setExpanded(isOpen ? null : entry.id)} style={{ padding: '14px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  {/* Title: "10 May 2026 — Cardio" */}
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>
+                    {dateLabel}
+                    <span style={{ color: '#444', margin: '0 6px' }}>—</span>
+                    <span style={{ color: tagColor }}>{typeTag}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 3, fontFamily: mono }}>{subtitle}</div>
+                </div>
+                <span style={{ color: '#555', fontSize: 14, flexShrink: 0, marginLeft: 8 }}>{isOpen ? '▲' : '▼'}</span>
+              </div>
+
+              {isOpen && (
+                <div style={{ borderTop: '1px solid #222' }}>
+                  {/* Cardio detail */}
+                  {isCardio && (
+                    <div style={{ padding: '12px 16px' }}>
+                      {entry.desc ? (
+                        <div style={{ fontSize: 13, color: '#aaa', lineHeight: 1.6, marginBottom: 12 }}>{entry.desc}</div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: '#444', fontStyle: 'italic', marginBottom: 12 }}>No notes.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Weights detail */}
+                  {!isCardio && entry.exercises && entry.exercises.map((ex, i) => (
+                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a' }}>
+                      <div style={{ fontSize: 13, color: '#ddd', marginBottom: 8 }}>{ex.name}</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {Array.from({ length: ex.totalSets }, (_, s) => {
+                          const w = Array.isArray(ex.weight) ? ex.weight[s] : null;
+                          const r = Array.isArray(ex.reps)   ? ex.reps[s]   : null;
+                          const done = s < ex.setsCompleted;
+                          return (
+                            <div key={s} style={{
+                              background: done ? '#0d1f0d' : '#161616',
+                              border: `1px solid ${done ? '#2a5a2a' : '#2a2a2a'}`,
+                              borderRadius: 8, padding: '6px 10px', textAlign: 'center', minWidth: 54
+                            }}>
+                              <div style={{ fontSize: 9, color: done ? '#6dde6d' : '#444', fontFamily: mono, letterSpacing: 1, marginBottom: 3 }}>SET {s+1}</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: done ? '#fff' : '#444', fontFamily: mono }}>{r || '—'}</div>
+                              <div style={{ fontSize: 9, color: '#555', fontFamily: mono }}>reps</div>
+                              <div style={{ fontSize: 11, color: done ? '#aaa' : '#333', fontFamily: mono, marginTop: 2 }}>{w ? `${w}kg` : '—'}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div style={{ padding: '12px 16px' }}>
+                    <button onClick={() => del(entry.id)} style={{
+                      background: 'none', border: '1px solid #3a1a1a', color: '#884444',
+                      borderRadius: 8, padding: '8px 14px', fontSize: 12,
+                      cursor: 'pointer', fontFamily: mono, width: '100%'
+                    }}>Delete entry</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Cardio Screen ────────────────────────────────────────────────────────────
+function CardioScreen({ onBack }) {
+  const [date, setDate]   = useState(todayStr);
+  const [type, setType]   = useState('');
+  const [desc, setDesc]   = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const save = () => {
+    if (!type.trim()) return;
+    const entry = {
+      id:         Date.now().toString(),
+      entryType:  'cardio',
+      date,
+      cardioType: type.trim(),
+      desc:       desc.trim(),
+    };
+    const history = ls.get('wt-history', []);
+    ls.set('wt-history', [...history, entry]);
+    setType(''); setDesc(''); setDate(todayStr()); setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const inputStyle = {
+    background: '#1c1c1c', border: '1px solid #333', borderRadius: 9,
+    color: '#fff', padding: '11px 14px', fontSize: 14, fontFamily: sans,
+    width: '100%', outline: 'none', marginBottom: 10
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#111', color: '#f0f0f0', fontFamily: sans, maxWidth: 440, margin: '0 auto', paddingBottom: 60 }}>
+      <div style={{ padding: '28px 20px 16px', borderBottom: '1px solid #2a2a2a', position: 'sticky', top: 0, background: '#111', zIndex: 10 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, cursor: 'pointer', fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back</button>
+        <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>Log Cardio</div>
+        <div style={{ fontSize: 26, fontWeight: 700, color: '#fff' }}>New Cardio Entry</div>
+      </div>
+
+      <div style={{ padding: '24px 20px 0' }}>
+        <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 16, textTransform: 'uppercase' }}>Entry Details</div>
+          <div style={{ fontSize: 11, color: '#666', fontFamily: mono, marginBottom: 6, letterSpacing: 1 }}>DATE</div>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, colorScheme: 'dark' }} />
+          <div style={{ fontSize: 11, color: '#666', fontFamily: mono, marginBottom: 6, letterSpacing: 1, marginTop: 4 }}>TYPE</div>
+          <input type="text" placeholder="e.g. Treadmill, Stairmaster, Walk" value={type} onChange={e => { setType(e.target.value); setSaved(false); }} style={inputStyle} />
+          <div style={{ fontSize: 11, color: '#666', fontFamily: mono, marginBottom: 6, letterSpacing: 1, marginTop: 4 }}>NOTES</div>
+          <textarea placeholder="Duration, distance, how it felt..." value={desc} onChange={e => setDesc(e.target.value)} rows={4}
+            style={{ ...inputStyle, resize: 'none', lineHeight: 1.6, marginBottom: 16 }} />
+          <button onClick={save} style={{
+            width: '100%', padding: '14px',
+            background: saved ? '#0d1f0d' : type.trim() ? '#fff' : '#222',
+            color: saved ? '#6dde6d' : type.trim() ? '#000' : '#444',
+            border: saved ? '1px solid #2a5a2a' : 'none',
+            borderRadius: 10, fontSize: 14, fontWeight: 700,
+            cursor: type.trim() ? 'pointer' : 'default', fontFamily: mono, letterSpacing: 1,
+            transition: 'all 0.2s'
+          }}>
+            {saved ? '✓ Saved to history' : 'Save to history'}
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: '#444', textAlign: 'center', marginTop: 14, fontFamily: mono }}>
+          Saved entries appear in History
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Tracker ─────────────────────────────────────────────────────────────
+function WorkoutTracker() {
+  const [view, setView]               = useState('workout');
+  const [warmupChecked, setWarmupChecked] = useState({});
+  const [setsReps, setSetsReps]       = useState({});
+  const [weights, setWeights]         = useState(() => ls.get('wt-weights', {}));
+  const [saved, setSaved]             = useState(false);
+  const [variants, setVariants]       = useState(() => ls.get('wt-variants', { bicep: 'machine', tricep: 'machine' }));
+
+  const setVariant = (exId, key) => {
+    const next = { ...variants, [exId]: key };
+    setVariants(next);
+    ls.set('wt-variants', next);
+  };
+
+  const saveWeight = (id, val) => {
+    const next = { ...weights, [id]: val };
+    setWeights(next);
+    ls.set('wt-weights', next);
+  };
+
+  const toggleWarmup = (item) => setWarmupChecked(p => ({ ...p, [item]: !p[item] }));
+  const setReps      = (exId, i, val) => { const k = `${exId}|${i}`; setSetsReps(p => ({ ...p, [k]: val })); setSaved(false); };
+  const isSetDone    = (exId, i) => !!(setsReps[`${exId}|${i}`] > 0);
+  const getReps      = (exId, i) => setsReps[`${exId}|${i}`] || '';
+  const isWarmupDone = (item)    => !!warmupChecked[item];
+
+  const totalItems = SESSION.warmup.length + SESSION.exercises.reduce((a, e) => a + e.sets, 0);
+  const doneItems  =
+    SESSION.warmup.filter(w => isWarmupDone(w)).length +
+    SESSION.exercises.reduce((a, e) => a + Array.from({ length: e.sets }, (_, i) => isSetDone(e.id, i)).filter(Boolean).length, 0);
+  const pct      = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
+  const complete = pct === 100;
+
+  const clearAll = () => {
+    setSetsReps({});
+    setWarmupChecked({});
+    setWeights({});
+    ls.set('wt-weights', {});
+    setSaved(false);
+  };
+
+  const saveSession = () => {
+    const entry = {
+      id:        Date.now().toString(),
+      entryType: 'weights',
+      date:      todayStr(),
+      session:   'Weights',
+      exercises: SESSION.exercises.map(ex => {
+        const activeVariant = ex.variants ? ex.variants.find(v => v.key === (variants[ex.id] || ex.variants[0].key)) : null;
+        const weightId = activeVariant ? `${ex.id}-${activeVariant.key}` : ex.id;
+        return {
+          name:          activeVariant ? activeVariant.name : ex.name,
+          weight:        Array.from({ length: ex.sets }, (_, i) => weights[`${weightId}|${i}`] || null),
+          setsCompleted: Array.from({ length: ex.sets }, (_, i) => isSetDone(ex.id, i)).filter(Boolean).length,
+          totalSets:     ex.sets,
+          reps:          Array.from({ length: ex.sets }, (_, i) => setsReps[`${ex.id}|${i}`] || null),
+        };
+      })
+    };
+    const history = ls.get('wt-history', []);
+    ls.set('wt-history', [...history, entry]);
+    clearAll();
+    setSaved(true);
+  };
+
+  if (view === 'history') return <HistoryScreen onBack={() => setView('workout')} />;
+  if (view === 'cardio')  return <CardioScreen  onBack={() => setView('workout')} />;
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#111', color: '#f0f0f0', fontFamily: sans, maxWidth: 440, margin: '0 auto', paddingBottom: 80 }}>
+
+      {/* Header */}
+      <div style={{ padding: '28px 20px 16px', background: '#111', position: 'sticky', top: 0, zIndex: 10, borderBottom: '1px solid #2a2a2a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>Full Body · 3×/Week</div>
+            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: '#fff' }}>Ruben's Workout Tracker</div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button onClick={() => setView('cardio')} style={{
+              background: 'transparent', border: '1px solid #fff', borderRadius: 9,
+              color: '#fff', fontSize: 11, fontFamily: mono, padding: '8px 10px', cursor: 'pointer',
+              letterSpacing: 1, textTransform: 'uppercase'
+            }}>Cardio</button>
+            <button onClick={() => setView('history')} style={{
+              background: 'transparent', border: '1px solid #fff', borderRadius: 9,
+              color: '#fff', fontSize: 11, fontFamily: mono, padding: '8px 10px', cursor: 'pointer',
+              letterSpacing: 1, textTransform: 'uppercase'
+            }}>History</button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#666', marginBottom: 6, fontFamily: mono }}>
+          <span>PROGRESS</span>
+          <span style={{ color: complete ? '#6dde6d' : pct > 0 ? '#ccc' : '#666' }}>{pct}%</span>
+        </div>
+        <div style={{ height: 3, background: '#333', borderRadius: 2 }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: complete ? '#6dde6d' : '#888', borderRadius: 2, transition: 'width 0.3s ease' }} />
+        </div>
+      </div>
+
+      <div style={{ padding: '20px 20px 0' }}>
+
+        {/* Warm-up */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', marginBottom: 10, textTransform: 'uppercase', fontFamily: mono }}>Warm-Up · 5–8 min</div>
+          {SESSION.warmup.map(item => {
+            const done = isWarmupDone(item);
+            return (
+              <div key={item} onClick={() => toggleWarmup(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #2a2a2a', cursor: 'pointer' }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: 5,
+                  border: done ? 'none' : '2px solid #555',
+                  background: done ? '#6dde6d' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s'
+                }}>
+                  {done && <span style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>✓</span>}
+                </div>
+                <span style={{ fontSize: 15, color: done ? '#444' : '#ccc', textDecoration: done ? 'line-through' : 'none', transition: 'all 0.15s' }}>{item}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Exercises */}
+        <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', marginBottom: 12, textTransform: 'uppercase', fontFamily: mono }}>Exercises</div>
+
+        {SESSION.exercises.map(ex => {
+          // Resolve variant if applicable
+          const activeVariant = ex.variants ? ex.variants.find(v => v.key === (variants[ex.id] || ex.variants[0].key)) : null;
+          const name     = activeVariant ? activeVariant.name     : ex.name;
+          const note     = activeVariant ? activeVariant.note     : ex.note;
+          const flagNote = activeVariant ? activeVariant.flagNote : ex.flagNote;
+          const weightId = activeVariant ? `${ex.id}-${activeVariant.key}` : ex.id;
+
+          const doneSets = Array.from({ length: ex.sets }, (_, i) => isSetDone(ex.id, i)).filter(Boolean).length;
+          const allDone  = doneSets === ex.sets;
+          return (
+            <div key={ex.id} style={{
+              marginBottom: 10,
+              background: allDone ? '#0d1f0d' : '#242424',
+              border: `1px solid ${allDone ? '#2a5a2a' : '#383838'}`,
+              borderRadius: 14, overflow: 'hidden', transition: 'all 0.2s'
+            }}>
+              {ex.isFinisher && (
+                <div style={{ background: '#161616', padding: '5px 14px', fontSize: 9, letterSpacing: 3, color: '#666', textTransform: 'uppercase', borderBottom: '1px solid #222', fontFamily: mono }}>Finisher</div>
+              )}
+              <div style={{ padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <div style={{ flex: 1, paddingRight: 8 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: allDone ? '#4a8a4a' : '#fff', lineHeight: 1.4 }}>
+                      {name}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 4, fontFamily: mono }}>{ex.sets} sets · {ex.reps} reps · rest {ex.rest}</div>
+                  </div>
+                  {allDone && <span style={{ color: '#6dde6d', fontSize: 18, flexShrink: 0 }}>✓</span>}
+                </div>
+
+                {/* Variant toggle */}
+                {ex.variants && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                    {ex.variants.map(v => {
+                      const active = (variants[ex.id] || ex.variants[0].key) === v.key;
+                      return (
+                        <button key={v.key} onClick={() => setVariant(ex.id, v.key)} style={{
+                          padding: '5px 12px', borderRadius: 6, fontSize: 11, fontFamily: mono,
+                          fontWeight: 600, cursor: 'pointer', letterSpacing: 1,
+                          background: active ? '#fff' : 'transparent',
+                          color: active ? '#000' : '#666',
+                          border: active ? 'none' : '1px solid #444',
+                          transition: 'all 0.15s'
+                        }}>{v.label}</button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {flagNote && (
+                  <div style={{ fontSize: 12, color: '#e6c200', background: '#1f1a00', padding: '8px 12px', borderRadius: 8, marginBottom: 12, lineHeight: 1.5, border: '1px solid #3a3000' }}>⚠ {flagNote}</div>
+                )}
+                {note && (
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 12, fontStyle: 'italic', lineHeight: 1.5 }}>{note}</div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {Array.from({ length: ex.sets }, (_, i) => {
+                    const done = isSetDone(ex.id, i);
+                    const reps = getReps(ex.id, i);
+                    const setWeightId = `${weightId}|${i}`;
+                    return (
+                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 9, color: done ? '#6dde6d' : '#555', fontFamily: mono, letterSpacing: 1, textTransform: 'uppercase' }}>Set {i+1}</span>
+                        <input
+                          type="number"
+                          placeholder="kg"
+                          value={weights[setWeightId] || ''}
+                          onChange={e => saveWeight(setWeightId, e.target.value)}
+                          style={{
+                            width: 52, height: 48, borderRadius: 9, textAlign: 'center',
+                            fontSize: 15, fontWeight: 700, fontFamily: mono,
+                            background: '#111',
+                            color: weights[setWeightId] ? '#fff' : '#555',
+                            border: '1px solid #444',
+                            outline: 'none'
+                          }}
+                        />
+                        <span style={{ fontSize: 9, color: '#444', fontFamily: mono }}>kg</span>
+                        <input
+                          type="number"
+                          placeholder={ex.reps.split('–')[0]}
+                          value={reps}
+                          onChange={e => setReps(ex.id, i, e.target.value)}
+                          style={{
+                            width: 52, height: 36, borderRadius: 7, textAlign: 'center',
+                            fontSize: 13, fontFamily: mono,
+                            background: done ? '#6dde6d' : '#111',
+                            color: done ? '#000' : '#bbb',
+                            border: done ? 'none' : '2px solid #555',
+                            outline: 'none', transition: 'all 0.15s'
+                          }}
+                        />
+                        <span style={{ fontSize: 9, color: '#444', fontFamily: mono }}>reps</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Save / Complete */}
+        <div style={{ marginTop: 24, marginBottom: 40, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {complete ? (
+            <div>
+              <div style={{ padding: '22px 20px', background: '#0d1f0d', border: '1px solid #2a5a2a', borderRadius: 14, textAlign: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 30, marginBottom: 10 }}>✓</div>
+                <div style={{ fontSize: 14, color: '#6dde6d', letterSpacing: 2, fontFamily: mono }}>SESSION COMPLETE</div>
+                <div style={{ fontSize: 13, color: '#4a7a4a', marginTop: 8 }}>Good work. Rest up.</div>
+              </div>
+              <button onClick={saveSession} disabled={saved} style={{
+                width: '100%', padding: '14px', background: saved ? '#1a1a1a' : '#fff',
+                color: saved ? '#444' : '#000', border: saved ? '1px solid #2a2a2a' : 'none',
+                borderRadius: 12, fontSize: 14, fontWeight: 700,
+                cursor: saved ? 'default' : 'pointer', fontFamily: mono, letterSpacing: 1, transition: 'all 0.2s', marginBottom: 10
+              }}>{saved ? '✓ Saved to history' : 'Save session to history'}</button>
+            </div>
+          ) : pct > 0 ? (
+            <button onClick={saveSession} disabled={saved} style={{
+              width: '100%', padding: '14px', background: 'transparent',
+              color: saved ? '#444' : '#666', border: `1px solid ${saved ? '#222' : '#333'}`,
+              borderRadius: 12, fontSize: 13, fontWeight: 600,
+              cursor: saved ? 'default' : 'pointer', fontFamily: mono, letterSpacing: 1
+            }}>{saved ? '✓ Saved' : 'Save partial session'}</button>
+          ) : null}
+          {pct > 0 && (
+            <button onClick={clearAll} style={{
+              width: '100%', padding: '12px', background: 'transparent',
+              color: '#884444', border: '1px solid #3a1a1a',
+              borderRadius: 12, fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', fontFamily: mono, letterSpacing: 1
+            }}>Clear session</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<WorkoutTracker />);
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.log('SW failed:', err));
+    });
+  }
+</script>
+</body>
+</html>
