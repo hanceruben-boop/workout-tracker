@@ -2,7 +2,7 @@
   "name": "Ruben's Workout Tracker",
   "short_name": "Workout",
   "description": "Personal workout and cardio tracker",
-  "start_url": "./workout-tracker.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#111111",
   "theme_color": "#111111",
