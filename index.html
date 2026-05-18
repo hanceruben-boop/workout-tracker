@@ -4,12 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Ruben's Workout Tracker</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icon-192.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Workout" />
-  <meta name="theme-color" content="#111111" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -83,6 +77,30 @@ function todayStr() {
 
 // ─── History Screen ───────────────────────────────────────────────────────────
 function HistoryScreen({ onBack }) {
+  const exportCSV = () => {
+    const history = ls.get('wt-history', []);
+    const rows = [['Date', 'Type', 'Exercise', 'Set', 'Weight (kg)', 'Reps', 'Session Notes']];
+    history.forEach(entry => {
+      if (entry.entryType === 'cardio') {
+        rows.push([entry.date, 'Cardio', entry.cardioType, '', '', entry.desc || '', '']);
+      } else {
+        (entry.exercises || []).forEach((ex, ei) => {
+          for (let s = 0; s < ex.totalSets; s++) {
+            const w = Array.isArray(ex.weight) ? (ex.weight[s] || '') : '';
+            const r = Array.isArray(ex.reps)   ? (ex.reps[s]   || '') : '';
+            rows.push([entry.date, 'Weights', ex.name, s + 1, w, r, ei === 0 ? (entry.note || '') : '']);
+          }
+        });
+      }
+    });
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `workout-history-${todayStr()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const [history, setHistory] = useState(() => ls.get('wt-history', []));
   const [expanded, setExpanded] = useState(null);
 
@@ -100,7 +118,14 @@ function HistoryScreen({ onBack }) {
       <div style={{ padding: '28px 20px 16px', borderBottom: '1px solid #2a2a2a', position: 'sticky', top: 0, background: '#111', zIndex: 10 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, cursor: 'pointer', fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back</button>
         <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>All Sessions</div>
-        <div style={{ fontSize: 26, fontWeight: 700, color: '#fff' }}>History</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: '#fff' }}>History</div>
+          <button onClick={exportCSV} style={{
+            background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 9,
+            color: '#888', fontSize: 11, fontFamily: mono, padding: '8px 10px',
+            cursor: 'pointer', letterSpacing: 1, textTransform: 'uppercase'
+          }}>Export CSV</button>
+        </div>
       </div>
 
       <div style={{ padding: '16px 20px 0' }}>
@@ -149,31 +174,45 @@ function HistoryScreen({ onBack }) {
                     </div>
                   )}
 
-                  {/* Weights detail */}
-                  {!isCardio && entry.exercises && entry.exercises.map((ex, i) => (
-                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a' }}>
-                      <div style={{ fontSize: 13, color: '#ddd', marginBottom: 8 }}>{ex.name}</div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {Array.from({ length: ex.totalSets }, (_, s) => {
-                          const w = Array.isArray(ex.weight) ? ex.weight[s] : null;
-                          const r = Array.isArray(ex.reps)   ? ex.reps[s]   : null;
-                          const done = s < ex.setsCompleted;
-                          return (
-                            <div key={s} style={{
-                              background: done ? '#0d1f0d' : '#161616',
-                              border: `1px solid ${done ? '#2a5a2a' : '#2a2a2a'}`,
-                              borderRadius: 8, padding: '6px 10px', textAlign: 'center', minWidth: 54
-                            }}>
-                              <div style={{ fontSize: 9, color: done ? '#6dde6d' : '#444', fontFamily: mono, letterSpacing: 1, marginBottom: 3 }}>SET {s+1}</div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: done ? '#fff' : '#444', fontFamily: mono }}>{r || '—'}</div>
-                              <div style={{ fontSize: 9, color: '#555', fontFamily: mono }}>reps</div>
-                              <div style={{ fontSize: 11, color: done ? '#aaa' : '#333', fontFamily: mono, marginTop: 2 }}>{w ? `${w}kg` : '—'}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {/* Session note */}
+                  {!isCardio && entry.note && (
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a' }}>
+                      <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 6, textTransform: 'uppercase' }}>Notes</div>
+                      <div style={{ fontSize: 13, color: '#aaa', lineHeight: 1.6 }}>{entry.note}</div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Weights detail */}
+                  {!isCardio && entry.exercises && entry.exercises.map((ex, i) => {
+                    const hasData = ex.setsCompleted > 0 ||
+                      (Array.isArray(ex.weight) && ex.weight.some(Boolean)) ||
+                      (Array.isArray(ex.reps) && ex.reps.some(Boolean));
+                    return (
+                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a' }}>
+                      <div style={{ fontSize: 13, color: hasData ? '#ddd' : '#444', marginBottom: hasData ? 8 : 0 }}>{ex.name}</div>
+                      {hasData ? (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {Array.from({ length: ex.totalSets }, (_, s) => {
+                            const w = Array.isArray(ex.weight) ? ex.weight[s] : null;
+                            const r = Array.isArray(ex.reps)   ? ex.reps[s]   : null;
+                            const done = s < ex.setsCompleted;
+                            return (
+                              <div key={s} style={{
+                                background: done ? '#0d1f0d' : '#161616',
+                                border: `1px solid ${done ? '#2a5a2a' : '#2a2a2a'}`,
+                                borderRadius: 8, padding: '6px 10px', textAlign: 'center', minWidth: 54
+                              }}>
+                                <div style={{ fontSize: 9, color: done ? '#6dde6d' : '#444', fontFamily: mono, letterSpacing: 1, marginBottom: 3 }}>SET {s+1}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: done ? '#fff' : '#444', fontFamily: mono }}>{r || '—'}</div>
+                                <div style={{ fontSize: 9, color: '#555', fontFamily: mono }}>reps</div>
+                                <div style={{ fontSize: 11, color: done ? '#aaa' : '#333', fontFamily: mono, marginTop: 2 }}>{w ? `${w}kg` : '—'}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );})}
 
                   <div style={{ padding: '12px 16px' }}>
                     <button onClick={() => del(entry.id)} style={{
@@ -266,6 +305,9 @@ function WorkoutTracker() {
   const [weights, setWeights]         = useState(() => ls.get('wt-weights', {}));
   const [saved, setSaved]             = useState(false);
   const [variants, setVariants]       = useState(() => ls.get('wt-variants', { bicep: 'machine', tricep: 'machine' }));
+  const [nameOverrides, setNameOverrides] = useState({});
+  const [editingName, setEditingName] = useState(null);
+  const [sessionNote, setSessionNote] = useState('');
 
   const setVariant = (exId, key) => {
     const next = { ...variants, [exId]: key };
@@ -296,6 +338,9 @@ function WorkoutTracker() {
     setSetsReps({});
     setWarmupChecked({});
     setWeights({});
+    setNameOverrides({});
+    setEditingName(null);
+    setSessionNote('');
     ls.set('wt-weights', {});
     setSaved(false);
   };
@@ -306,11 +351,13 @@ function WorkoutTracker() {
       entryType: 'weights',
       date:      todayStr(),
       session:   'Weights',
+      note:      sessionNote.trim(),
       exercises: SESSION.exercises.map(ex => {
         const activeVariant = ex.variants ? ex.variants.find(v => v.key === (variants[ex.id] || ex.variants[0].key)) : null;
         const weightId = activeVariant ? `${ex.id}-${activeVariant.key}` : ex.id;
+        const displayName = nameOverrides[ex.id] || (activeVariant ? activeVariant.name : ex.name);
         return {
-          name:          activeVariant ? activeVariant.name : ex.name,
+          name:          displayName,
           weight:        Array.from({ length: ex.sets }, (_, i) => weights[`${weightId}|${i}`] || null),
           setsCompleted: Array.from({ length: ex.sets }, (_, i) => isSetDone(ex.id, i)).filter(Boolean).length,
           totalSets:     ex.sets,
@@ -387,9 +434,9 @@ function WorkoutTracker() {
         <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', marginBottom: 12, textTransform: 'uppercase', fontFamily: mono }}>Exercises</div>
 
         {SESSION.exercises.map(ex => {
-          // Resolve variant if applicable
           const activeVariant = ex.variants ? ex.variants.find(v => v.key === (variants[ex.id] || ex.variants[0].key)) : null;
-          const name     = activeVariant ? activeVariant.name     : ex.name;
+          const defaultName = activeVariant ? activeVariant.name : ex.name;
+          const name     = nameOverrides[ex.id] || defaultName;
           const note     = activeVariant ? activeVariant.note     : ex.note;
           const flagNote = activeVariant ? activeVariant.flagNote : ex.flagNote;
           const weightId = activeVariant ? `${ex.id}-${activeVariant.key}` : ex.id;
@@ -409,9 +456,27 @@ function WorkoutTracker() {
               <div style={{ padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                   <div style={{ flex: 1, paddingRight: 8 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: allDone ? '#4a8a4a' : '#fff', lineHeight: 1.4 }}>
-                      {name}
-                    </div>
+                    {editingName === ex.id ? (
+                      <input
+                        autoFocus
+                        value={nameOverrides[ex.id] !== undefined ? nameOverrides[ex.id] : name}
+                        onChange={e => setNameOverrides(p => ({ ...p, [ex.id]: e.target.value }))}
+                        onBlur={() => setEditingName(null)}
+                        placeholder={defaultName}
+                        style={{
+                          background: '#111', border: '1px solid #888', borderRadius: 6,
+                          color: '#fff', fontSize: 15, fontWeight: 600, fontFamily: sans,
+                          padding: '4px 8px', width: '100%', outline: 'none', marginBottom: 4
+                        }}
+                      />
+                    ) : (
+                      <div
+                        onClick={() => setEditingName(ex.id)}
+                        style={{ fontSize: 15, fontWeight: 600, color: allDone ? '#4a8a4a' : '#fff', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {name}
+                        <span style={{ fontSize: 10, color: '#555' }}>✎</span>
+                      </div>
+                    )}
                     <div style={{ fontSize: 12, color: '#888', marginTop: 4, fontFamily: mono }}>{ex.sets} sets · {ex.reps} reps · rest {ex.rest}</div>
                   </div>
                   {allDone && <span style={{ color: '#6dde6d', fontSize: 18, flexShrink: 0 }}>✓</span>}
@@ -489,6 +554,22 @@ function WorkoutTracker() {
           );
         })}
 
+        {/* Session note */}
+        <div style={{ marginTop: 24, background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 10, textTransform: 'uppercase' }}>Session Notes</div>
+          <textarea
+            placeholder="How did it feel? Anything to note..."
+            value={sessionNote}
+            onChange={e => setSessionNote(e.target.value)}
+            rows={3}
+            style={{
+              width: '100%', background: '#111', border: '1px solid #333', borderRadius: 9,
+              color: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: sans,
+              outline: 'none', resize: 'none', lineHeight: 1.6
+            }}
+          />
+        </div>
+
         {/* Save / Complete */}
         <div style={{ marginTop: 24, marginBottom: 40, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {complete ? (
@@ -528,15 +609,6 @@ function WorkoutTracker() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<WorkoutTracker />);
-</script>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js')
-        .then(reg => console.log('SW registered:', reg.scope))
-        .catch(err => console.log('SW failed:', err));
-    });
-  }
 </script>
 </body>
 </html>
