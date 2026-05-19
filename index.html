@@ -20,206 +20,166 @@
 <div id="root"></div>
 <script type="text/babel">
 
-const { useState, useEffect } = React;
+const { useState } = React;
 
-const SESSION = {
+const SESSION_DEFAULTS = {
   warmup: [
     "Internal rotation (band)",
     "External rotation (band)",
     "Band shoulder extension (straight-arm pulldown)"
   ],
   exercises: [
-    { id: "chest-press",      name: "Chest Press Machine",        sets: 4, reps: "10–12", rest: "90s" },
-    { id: "lat-pulldown",     name: "Lat Pulldown",               sets: 4, reps: "10–12", rest: "90s", flagNote: "Stop 80% up — no full arm extension" },
-    { id: "leg-press",        name: "Leg Press",                  sets: 4, reps: "10–12", rest: "90s" },
-    { id: "leg-curl",         name: "Leg Curl",                   sets: 3, reps: "12–15", rest: "60s", note: "Slow on the way down" },
-    { id: "pec-deck",         name: "Pec Deck",                   sets: 3, reps: "12–15", rest: "75s", flagNote: "Don't let elbows pass your torso" },
-    { id: "reverse-pec-deck", sets: 3, reps: "12–15", rest: "60s", note: "Shoulder health priority — don't rush this",
-      variants: [
-        { key: "machine", label: "Machine", name: "Reverse Pec Deck" },
-        { key: "cable",   label: "Cable",   name: "Cable Rear Delt Fly" },
-      ]
-    },
-    {
-      id: "bicep", sets: 3, reps: "10–12", rest: "60s",
-      variants: [
-        { key: "machine", label: "Machine", name: "Bicep Machine" },
-        { key: "cable",   label: "Cable",   name: "Cable Bicep Curl", note: "Elbow stays tucked" },
-      ]
-    },
-    {
-      id: "tricep", sets: 3, reps: "10–12", rest: "60s",
-      variants: [
-        { key: "machine", label: "Machine", name: "Tricep Machine" },
-        { key: "cable",   label: "Cable",   name: "Cable Tricep Pushdown" },
-      ]
-    },
+    { id: "chest-press",      name: "Chest Press Machine",  sets: 4, reps: "10–12", rest: "90s" },
+    { id: "lat-pulldown",     name: "Lat Pulldown",          sets: 4, reps: "10–12", rest: "90s", flagNote: "Stop 80% up — no full arm extension" },
+    { id: "leg-press",        name: "Leg Press",             sets: 4, reps: "10–12", rest: "90s" },
+    { id: "leg-curl",         name: "Leg Curl",              sets: 3, reps: "12–15", rest: "60s", note: "Slow on the way down" },
+    { id: "pec-deck",         name: "Pec Deck",              sets: 3, reps: "12–15", rest: "75s", flagNote: "Don't let elbows pass your torso" },
+    { id: "reverse-pec-deck", name: "Reverse Pec Deck",      sets: 3, reps: "12–15", rest: "60s", note: "Shoulder health priority — don't rush this" },
+    { id: "bicep",            name: "Bicep Curl",            sets: 3, reps: "10–12", rest: "60s" },
+    { id: "tricep",           name: "Tricep Pushdown",       sets: 3, reps: "10–12", rest: "60s" },
   ]
 };
 
 const ls = {
-  get: (k, fallback) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  get: (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } },
+  set: (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 
 const mono = "'SF Mono','Fira Code','Courier New',monospace";
 const sans = "-apple-system,'SF Pro Display','Segoe UI',sans-serif";
 
-// Format "2026-05-10" → "10 May 2026"
-function fmtShort(dateStr) {
-  const [y, m, d] = dateStr.split('-');
-  return new Date(y, m-1, d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+function fmtShort(d) {
+  const [y,m,day] = d.split('-');
+  return new Date(y,m-1,day).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
 }
+function todayStr() { return new Date().toISOString().split('T')[0]; }
 
-function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
-
-// ─── History Screen ───────────────────────────────────────────────────────────
+// ─── History ──────────────────────────────────────────────────────────────────
 function HistoryScreen({ onBack }) {
-  const exportCSV = () => {
-    const history = ls.get('wt-history', []);
-    const rows = [['Date', 'Type', 'Exercise', 'Set', 'Weight (kg)', 'Reps', 'Session Notes']];
-    history.forEach(entry => {
-      if (entry.entryType === 'cardio') {
-        rows.push([entry.date, 'Cardio', entry.cardioType, '', '', entry.desc || '', '']);
-      } else {
-        (entry.exercises || []).forEach((ex, ei) => {
-          for (let s = 0; s < ex.totalSets; s++) {
-            const w = Array.isArray(ex.weight) ? (ex.weight[s] || '') : '';
-            const r = Array.isArray(ex.reps)   ? (ex.reps[s]   || '') : '';
-            rows.push([entry.date, 'Weights', ex.name, s + 1, w, r, ei === 0 ? (entry.note || '') : '']);
-          }
-        });
-      }
-    });
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = `workout-history-${todayStr()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const [history, setHistory] = useState(() => ls.get('wt-history', []));
+  const [history, setHistory] = useState(() => ls.get('wt-history',[]));
   const [expanded, setExpanded] = useState(null);
 
   const del = (id) => {
     const next = history.filter(h => h.id !== id);
-    setHistory(next);
-    ls.set('wt-history', next);
+    setHistory(next); ls.set('wt-history', next);
     if (expanded === id) setExpanded(null);
   };
 
-  const sorted = [...history].sort((a, b) => b.id - a.id);
+  const exportCSV = () => {
+    const rows = [['Date','Type','Exercise','Set','Weight (kg)','Reps','Notes']];
+    [...history].sort((a,b)=>a.id-b.id).forEach(entry => {
+      if (entry.entryType === 'cardio') {
+        rows.push([entry.date,'Cardio',entry.cardioType,'','',entry.desc||'','']);
+      } else if (entry.entryType === 'bodyweight') {
+        rows.push([entry.date,'Body Weight','','',(entry.weight||''),'',entry.note||'']);
+      } else {
+        (entry.exercises||[]).forEach((ex,ei) => {
+          for (let s=0; s<ex.totalSets; s++) {
+            const w = Array.isArray(ex.weight) ? (ex.weight[s]||'') : '';
+            const r = Array.isArray(ex.reps)   ? (ex.reps[s]  ||'') : '';
+            rows.push([entry.date,'Weights',ex.name,s+1,w,r,ei===0?(entry.note||''):'']);
+          }
+        });
+      }
+    });
+    const csv = rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download = `workout-history-${todayStr()}.csv`; a.click();
+  };
+
+  const sorted = [...history].sort((a,b)=>b.id-a.id);
+
+  const tagFor = (entry) => {
+    if (entry.entryType==='cardio')      return { label:'Cardio',      color:'#4a9eff', sub: entry.cardioType };
+    if (entry.entryType==='bodyweight')  return { label:'Body Weight', color:'#b57aff', sub: entry.weight ? `${entry.weight} kg` : '' };
+    return { label:'Weights', color:'#6dde6d', sub: entry.session };
+  };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#111', color: '#f0f0f0', fontFamily: sans, maxWidth: 440, margin: '0 auto', paddingBottom: 60 }}>
-      <div style={{ padding: '28px 20px 16px', borderBottom: '1px solid #2a2a2a', position: 'sticky', top: 0, background: '#111', zIndex: 10 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, cursor: 'pointer', fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back</button>
-        <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>All Sessions</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 26, fontWeight: 700, color: '#fff' }}>History</div>
-          <button onClick={exportCSV} style={{
-            background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 9,
-            color: '#888', fontSize: 11, fontFamily: mono, padding: '8px 10px',
-            cursor: 'pointer', letterSpacing: 1, textTransform: 'uppercase'
-          }}>Export CSV</button>
+    <div style={{minHeight:'100vh',background:'#111',color:'#f0f0f0',fontFamily:sans,maxWidth:440,margin:'0 auto',paddingBottom:60}}>
+      <div style={{padding:'28px 20px 16px',borderBottom:'1px solid #2a2a2a',position:'sticky',top:0,background:'#111',zIndex:10}}>
+        <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:13,cursor:'pointer',fontFamily:mono,marginBottom:12,padding:0}}>← Back</button>
+        <div style={{fontSize:11,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:4,textTransform:'uppercase'}}>All Sessions</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontSize:26,fontWeight:700,color:'#fff'}}>History</div>
+          <button onClick={exportCSV} style={{background:'#1c1c1c',border:'1px solid #2a2a2a',borderRadius:9,color:'#888',fontSize:11,fontFamily:mono,padding:'8px 10px',cursor:'pointer',letterSpacing:1,textTransform:'uppercase'}}>Export CSV</button>
         </div>
       </div>
-
-      <div style={{ padding: '16px 20px 0' }}>
-        {sorted.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#444' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-            <div style={{ fontSize: 14, fontFamily: mono }}>No sessions logged yet.</div>
+      <div style={{padding:'16px 20px 0'}}>
+        {sorted.length===0 && (
+          <div style={{textAlign:'center',padding:'60px 20px',color:'#444'}}>
+            <div style={{fontSize:32,marginBottom:12}}>📋</div>
+            <div style={{fontSize:14,fontFamily:mono}}>No sessions logged yet.</div>
           </div>
         )}
-
         {sorted.map(entry => {
-          const isOpen  = expanded === entry.id;
-          const isCardio  = entry.entryType === 'cardio';
-          const dateLabel = fmtShort(entry.date);
-          const typeTag   = isCardio ? 'Cardio' : 'Weights';
-          const subtitle  = isCardio ? entry.cardioType : entry.session;
-          const tagColor  = isCardio ? '#4a9eff' : '#6dde6d';
-          const tagBg     = isCardio ? '#0a1a2e' : '#0d1f0d';
-          const tagBorder = isCardio ? '#1a3a5a' : '#2a5a2a';
-
+          const isOpen = expanded===entry.id;
+          const {label,color,sub} = tagFor(entry);
           return (
-            <div key={entry.id} style={{ marginBottom: 10, background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 14, overflow: 'hidden' }}>
-              <div onClick={() => setExpanded(isOpen ? null : entry.id)} style={{ padding: '14px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div key={entry.id} style={{marginBottom:10,background:'#1c1c1c',border:'1px solid #2a2a2a',borderRadius:14,overflow:'hidden'}}>
+              <div onClick={()=>setExpanded(isOpen?null:entry.id)} style={{padding:'14px 16px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
-                  {/* Title: "10 May 2026 — Cardio" */}
-                  <div style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>
-                    {dateLabel}
-                    <span style={{ color: '#444', margin: '0 6px' }}>—</span>
-                    <span style={{ color: tagColor }}>{typeTag}</span>
+                  <div style={{fontSize:15,fontWeight:600,color:'#fff'}}>
+                    {fmtShort(entry.date)}
+                    <span style={{color:'#444',margin:'0 6px'}}>—</span>
+                    <span style={{color}}>{label}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#666', marginTop: 3, fontFamily: mono }}>{subtitle}</div>
+                  <div style={{fontSize:12,color:'#666',marginTop:3,fontFamily:mono}}>{sub}</div>
                 </div>
-                <span style={{ color: '#555', fontSize: 14, flexShrink: 0, marginLeft: 8 }}>{isOpen ? '▲' : '▼'}</span>
+                <span style={{color:'#555',fontSize:14,flexShrink:0,marginLeft:8}}>{isOpen?'▲':'▼'}</span>
               </div>
-
               {isOpen && (
-                <div style={{ borderTop: '1px solid #222' }}>
-                  {/* Cardio detail */}
-                  {isCardio && (
-                    <div style={{ padding: '12px 16px' }}>
-                      {entry.desc ? (
-                        <div style={{ fontSize: 13, color: '#aaa', lineHeight: 1.6, marginBottom: 12 }}>{entry.desc}</div>
-                      ) : (
-                        <div style={{ fontSize: 12, color: '#444', fontStyle: 'italic', marginBottom: 12 }}>No notes.</div>
-                      )}
+                <div style={{borderTop:'1px solid #222'}}>
+                  {/* Body weight */}
+                  {entry.entryType==='bodyweight' && (
+                    <div style={{padding:'12px 16px'}}>
+                      {entry.weight && <div style={{fontSize:28,fontWeight:700,color:'#b57aff',fontFamily:mono,marginBottom:6}}>{entry.weight}<span style={{fontSize:14,color:'#666',fontWeight:400}}> kg</span></div>}
+                      {entry.note && <div style={{fontSize:13,color:'#aaa',lineHeight:1.6}}>{entry.note}</div>}
                     </div>
                   )}
-
+                  {/* Cardio */}
+                  {entry.entryType==='cardio' && (
+                    <div style={{padding:'12px 16px'}}>
+                      {entry.desc ? <div style={{fontSize:13,color:'#aaa',lineHeight:1.6,marginBottom:12}}>{entry.desc}</div>
+                        : <div style={{fontSize:12,color:'#444',fontStyle:'italic',marginBottom:12}}>No notes.</div>}
+                    </div>
+                  )}
                   {/* Session note */}
-                  {!isCardio && entry.note && (
-                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a' }}>
-                      <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 6, textTransform: 'uppercase' }}>Notes</div>
-                      <div style={{ fontSize: 13, color: '#aaa', lineHeight: 1.6 }}>{entry.note}</div>
+                  {entry.entryType==='weights' && entry.note && (
+                    <div style={{padding:'12px 16px',borderBottom:'1px solid #1a1a1a'}}>
+                      <div style={{fontSize:10,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:6,textTransform:'uppercase'}}>Notes</div>
+                      <div style={{fontSize:13,color:'#aaa',lineHeight:1.6}}>{entry.note}</div>
                     </div>
                   )}
-
-                  {/* Weights detail */}
-                  {!isCardio && entry.exercises && entry.exercises.map((ex, i) => {
-                    const hasData = ex.setsCompleted > 0 ||
-                      (Array.isArray(ex.weight) && ex.weight.some(Boolean)) ||
-                      (Array.isArray(ex.reps) && ex.reps.some(Boolean));
+                  {/* Weights exercises */}
+                  {entry.entryType==='weights' && (entry.exercises||[]).map((ex,i) => {
+                    const hasData = ex.setsCompleted>0 || (Array.isArray(ex.weight)&&ex.weight.some(Boolean)) || (Array.isArray(ex.reps)&&ex.reps.some(Boolean));
                     return (
-                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a' }}>
-                      <div style={{ fontSize: 13, color: hasData ? '#ddd' : '#444', marginBottom: hasData ? 8 : 0 }}>{ex.name}</div>
-                      {hasData ? (
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {Array.from({ length: ex.totalSets }, (_, s) => {
-                            const w = Array.isArray(ex.weight) ? ex.weight[s] : null;
-                            const r = Array.isArray(ex.reps)   ? ex.reps[s]   : null;
-                            const done = s < ex.setsCompleted;
-                            return (
-                              <div key={s} style={{
-                                background: done ? '#0d1f0d' : '#161616',
-                                border: `1px solid ${done ? '#2a5a2a' : '#2a2a2a'}`,
-                                borderRadius: 8, padding: '6px 10px', textAlign: 'center', minWidth: 54
-                              }}>
-                                <div style={{ fontSize: 9, color: done ? '#6dde6d' : '#444', fontFamily: mono, letterSpacing: 1, marginBottom: 3 }}>SET {s+1}</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: done ? '#fff' : '#444', fontFamily: mono }}>{r || '—'}</div>
-                                <div style={{ fontSize: 9, color: '#555', fontFamily: mono }}>reps</div>
-                                <div style={{ fontSize: 11, color: done ? '#aaa' : '#333', fontFamily: mono, marginTop: 2 }}>{w ? `${w}kg` : '—'}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );})}
-
-                  <div style={{ padding: '12px 16px' }}>
-                    <button onClick={() => del(entry.id)} style={{
-                      background: 'none', border: '1px solid #3a1a1a', color: '#884444',
-                      borderRadius: 8, padding: '8px 14px', fontSize: 12,
-                      cursor: 'pointer', fontFamily: mono, width: '100%'
-                    }}>Delete entry</button>
+                      <div key={i} style={{padding:'12px 16px',borderBottom:'1px solid #1a1a1a'}}>
+                        <div style={{fontSize:13,color:hasData?'#ddd':'#444',marginBottom:hasData?8:0}}>{ex.name}</div>
+                        {hasData && (
+                          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                            {Array.from({length:ex.totalSets},(_,s) => {
+                              const w = Array.isArray(ex.weight)?ex.weight[s]:null;
+                              const r = Array.isArray(ex.reps)?ex.reps[s]:null;
+                              const done = s<ex.setsCompleted;
+                              return (
+                                <div key={s} style={{background:done?'#0d1f0d':'#161616',border:`1px solid ${done?'#2a5a2a':'#2a2a2a'}`,borderRadius:8,padding:'6px 10px',textAlign:'center',minWidth:54}}>
+                                  <div style={{fontSize:9,color:done?'#6dde6d':'#444',fontFamily:mono,letterSpacing:1,marginBottom:3}}>SET {s+1}</div>
+                                  <div style={{fontSize:13,fontWeight:700,color:done?'#fff':'#444',fontFamily:mono}}>{r||'—'}</div>
+                                  <div style={{fontSize:9,color:'#555',fontFamily:mono}}>reps</div>
+                                  <div style={{fontSize:11,color:done?'#aaa':'#333',fontFamily:mono,marginTop:2}}>{w?`${w}kg`:'—'}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div style={{padding:'12px 16px'}}>
+                    <button onClick={()=>del(entry.id)} style={{background:'none',border:'1px solid #3a1a1a',color:'#884444',borderRadius:8,padding:'8px 14px',fontSize:12,cursor:'pointer',fontFamily:mono,width:'100%'}}>Delete entry</button>
                   </div>
                 </div>
               )}
@@ -231,67 +191,108 @@ function HistoryScreen({ onBack }) {
   );
 }
 
-// ─── Cardio Screen ────────────────────────────────────────────────────────────
+// ─── Cardio ───────────────────────────────────────────────────────────────────
 function CardioScreen({ onBack }) {
-  const [date, setDate]   = useState(todayStr);
-  const [type, setType]   = useState('');
-  const [desc, setDesc]   = useState('');
-  const [saved, setSaved] = useState(false);
+  const [date,setDate] = useState(todayStr);
+  const [type,setType] = useState('');
+  const [desc,setDesc] = useState('');
+  const [saved,setSaved] = useState(false);
 
   const save = () => {
     if (!type.trim()) return;
-    const entry = {
-      id:         Date.now().toString(),
-      entryType:  'cardio',
-      date,
-      cardioType: type.trim(),
-      desc:       desc.trim(),
-    };
-    const history = ls.get('wt-history', []);
-    ls.set('wt-history', [...history, entry]);
+    const entry = { id:Date.now().toString(), entryType:'cardio', date, cardioType:type.trim(), desc:desc.trim() };
+    ls.set('wt-history',[...ls.get('wt-history',[]),entry]);
     setType(''); setDesc(''); setDate(todayStr()); setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setTimeout(()=>setSaved(false),2500);
   };
 
-  const inputStyle = {
-    background: '#1c1c1c', border: '1px solid #333', borderRadius: 9,
-    color: '#fff', padding: '11px 14px', fontSize: 14, fontFamily: sans,
-    width: '100%', outline: 'none', marginBottom: 10
-  };
+  const inp = { background:'#1c1c1c', border:'1px solid #333', borderRadius:9, color:'#fff', padding:'11px 14px', fontSize:14, fontFamily:sans, width:'100%', outline:'none', marginBottom:10 };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#111', color: '#f0f0f0', fontFamily: sans, maxWidth: 440, margin: '0 auto', paddingBottom: 60 }}>
-      <div style={{ padding: '28px 20px 16px', borderBottom: '1px solid #2a2a2a', position: 'sticky', top: 0, background: '#111', zIndex: 10 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, cursor: 'pointer', fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back</button>
-        <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>Log Cardio</div>
-        <div style={{ fontSize: 26, fontWeight: 700, color: '#fff' }}>New Cardio Entry</div>
+    <div style={{minHeight:'100vh',background:'#111',color:'#f0f0f0',fontFamily:sans,maxWidth:440,margin:'0 auto',paddingBottom:60}}>
+      <div style={{padding:'28px 20px 16px',borderBottom:'1px solid #2a2a2a',position:'sticky',top:0,background:'#111',zIndex:10}}>
+        <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:13,cursor:'pointer',fontFamily:mono,marginBottom:12,padding:0}}>← Back</button>
+        <div style={{fontSize:11,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:4,textTransform:'uppercase'}}>Log Cardio</div>
+        <div style={{fontSize:26,fontWeight:700,color:'#fff'}}>New Cardio Entry</div>
       </div>
-
-      <div style={{ padding: '24px 20px 0' }}>
-        <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 }}>
-          <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 16, textTransform: 'uppercase' }}>Entry Details</div>
-          <div style={{ fontSize: 11, color: '#666', fontFamily: mono, marginBottom: 6, letterSpacing: 1 }}>DATE</div>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, colorScheme: 'dark' }} />
-          <div style={{ fontSize: 11, color: '#666', fontFamily: mono, marginBottom: 6, letterSpacing: 1, marginTop: 4 }}>TYPE</div>
-          <input type="text" placeholder="e.g. Treadmill, Stairmaster, Walk" value={type} onChange={e => { setType(e.target.value); setSaved(false); }} style={inputStyle} />
-          <div style={{ fontSize: 11, color: '#666', fontFamily: mono, marginBottom: 6, letterSpacing: 1, marginTop: 4 }}>NOTES</div>
-          <textarea placeholder="Duration, distance, how it felt..." value={desc} onChange={e => setDesc(e.target.value)} rows={4}
-            style={{ ...inputStyle, resize: 'none', lineHeight: 1.6, marginBottom: 16 }} />
-          <button onClick={save} style={{
-            width: '100%', padding: '14px',
-            background: saved ? '#0d1f0d' : type.trim() ? '#fff' : '#222',
-            color: saved ? '#6dde6d' : type.trim() ? '#000' : '#444',
-            border: saved ? '1px solid #2a5a2a' : 'none',
-            borderRadius: 10, fontSize: 14, fontWeight: 700,
-            cursor: type.trim() ? 'pointer' : 'default', fontFamily: mono, letterSpacing: 1,
-            transition: 'all 0.2s'
-          }}>
-            {saved ? '✓ Saved to history' : 'Save to history'}
+      <div style={{padding:'24px 20px 0'}}>
+        <div style={{background:'#1c1c1c',border:'1px solid #2a2a2a',borderRadius:14,padding:16}}>
+          <div style={{fontSize:10,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:16,textTransform:'uppercase'}}>Entry Details</div>
+          <div style={{fontSize:11,color:'#666',fontFamily:mono,marginBottom:6,letterSpacing:1}}>DATE</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,colorScheme:'dark'}}/>
+          <div style={{fontSize:11,color:'#666',fontFamily:mono,marginBottom:6,letterSpacing:1,marginTop:4}}>TYPE</div>
+          <input type="text" placeholder="e.g. Treadmill, Stairmaster, Walk" value={type} onChange={e=>{setType(e.target.value);setSaved(false);}} style={inp}/>
+          <div style={{fontSize:11,color:'#666',fontFamily:mono,marginBottom:6,letterSpacing:1,marginTop:4}}>NOTES</div>
+          <textarea placeholder="Duration, distance, how it felt..." value={desc} onChange={e=>setDesc(e.target.value)} rows={4} style={{...inp,resize:'none',lineHeight:1.6,marginBottom:16}}/>
+          <button onClick={save} style={{width:'100%',padding:'14px',background:saved?'#0d1f0d':type.trim()?'#fff':'#222',color:saved?'#6dde6d':type.trim()?'#000':'#444',border:saved?'1px solid #2a5a2a':'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:type.trim()?'pointer':'default',fontFamily:mono,letterSpacing:1,transition:'all 0.2s'}}>
+            {saved?'✓ Saved to history':'Save to history'}
           </button>
         </div>
-        <div style={{ fontSize: 12, color: '#444', textAlign: 'center', marginTop: 14, fontFamily: mono }}>
-          Saved entries appear in History
+        <div style={{fontSize:12,color:'#444',textAlign:'center',marginTop:14,fontFamily:mono}}>Saved entries appear in History</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Body Weight Log ──────────────────────────────────────────────────────────
+function WeightLogScreen({ onBack }) {
+  const [date,setDate]     = useState(todayStr);
+  const [weight,setWeight] = useState('');
+  const [note,setNote]     = useState('');
+  const [saved,setSaved]   = useState(false);
+
+  const save = () => {
+    if (!weight) return;
+    const entry = { id:Date.now().toString(), entryType:'bodyweight', date, weight:parseFloat(weight), note:note.trim() };
+    ls.set('wt-history',[...ls.get('wt-history',[]),entry]);
+    setWeight(''); setNote(''); setDate(todayStr()); setSaved(true);
+    setTimeout(()=>setSaved(false),2500);
+  };
+
+  const inp = { background:'#1c1c1c', border:'1px solid #333', borderRadius:9, color:'#fff', padding:'11px 14px', fontSize:14, fontFamily:sans, width:'100%', outline:'none', marginBottom:10 };
+
+  // Show recent entries
+  const recent = ls.get('wt-history',[]).filter(e=>e.entryType==='bodyweight').sort((a,b)=>b.id-a.id).slice(0,10);
+
+  return (
+    <div style={{minHeight:'100vh',background:'#111',color:'#f0f0f0',fontFamily:sans,maxWidth:440,margin:'0 auto',paddingBottom:60}}>
+      <div style={{padding:'28px 20px 16px',borderBottom:'1px solid #2a2a2a',position:'sticky',top:0,background:'#111',zIndex:10}}>
+        <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:13,cursor:'pointer',fontFamily:mono,marginBottom:12,padding:0}}>← Back</button>
+        <div style={{fontSize:11,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:4,textTransform:'uppercase'}}>Body Weight</div>
+        <div style={{fontSize:26,fontWeight:700,color:'#fff'}}>Log Weight</div>
+      </div>
+      <div style={{padding:'24px 20px 0'}}>
+        <div style={{background:'#1c1c1c',border:'1px solid #2a2a2a',borderRadius:14,padding:16,marginBottom:24}}>
+          <div style={{fontSize:10,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:16,textTransform:'uppercase'}}>New Entry</div>
+          <div style={{fontSize:11,color:'#666',fontFamily:mono,marginBottom:6,letterSpacing:1}}>DATE</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,colorScheme:'dark'}}/>
+          <div style={{fontSize:11,color:'#666',fontFamily:mono,marginBottom:6,letterSpacing:1,marginTop:4}}>WEIGHT</div>
+          <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:10}}>
+            <input type="number" placeholder="0.0" value={weight} onChange={e=>{setWeight(e.target.value);setSaved(false);}}
+              style={{...inp,marginBottom:0,flex:1}}/>
+            <span style={{fontSize:14,color:'#666',fontFamily:mono,flexShrink:0}}>kg</span>
+          </div>
+          <div style={{fontSize:11,color:'#666',fontFamily:mono,marginBottom:6,letterSpacing:1,marginTop:4}}>NOTES</div>
+          <textarea placeholder="Any notes..." value={note} onChange={e=>setNote(e.target.value)} rows={2}
+            style={{...inp,resize:'none',lineHeight:1.6,marginBottom:16}}/>
+          <button onClick={save} style={{width:'100%',padding:'14px',background:saved?'#0d1f0d':weight?'#fff':'#222',color:saved?'#6dde6d':weight?'#000':'#444',border:saved?'1px solid #2a5a2a':'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:weight?'pointer':'default',fontFamily:mono,letterSpacing:1,transition:'all 0.2s'}}>
+            {saved?'✓ Saved':'Save'}
+          </button>
         </div>
+        {recent.length>0 && (
+          <>
+            <div style={{fontSize:10,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:12,textTransform:'uppercase'}}>Recent</div>
+            {recent.map(e=>(
+              <div key={e.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',background:'#1c1c1c',border:'1px solid #2a2a2a',borderRadius:12,marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:13,color:'#ccc'}}>{fmtShort(e.date)}</div>
+                  {e.note && <div style={{fontSize:11,color:'#555',marginTop:3}}>{e.note}</div>}
+                </div>
+                <div style={{fontSize:22,fontWeight:700,color:'#b57aff',fontFamily:mono}}>{e.weight}<span style={{fontSize:12,color:'#666',fontWeight:400}}> kg</span></div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
@@ -299,252 +300,189 @@ function CardioScreen({ onBack }) {
 
 // ─── Main Tracker ─────────────────────────────────────────────────────────────
 function WorkoutTracker() {
-  const [view, setView]               = useState('workout');
-  const [warmupChecked, setWarmupChecked] = useState({});
-  const [setsReps, setSetsReps]       = useState({});
-  const [weights, setWeights]         = useState(() => ls.get('wt-weights', {}));
-  const [saved, setSaved]             = useState(false);
-  const [variants, setVariants]       = useState(() => ls.get('wt-variants', { bicep: 'machine', tricep: 'machine' }));
-  const [nameOverrides, setNameOverrides] = useState({});
-  const [editingName, setEditingName] = useState(null);
-  const [sessionNote, setSessionNote] = useState('');
+  const [view,setView]           = useState('workout');
+  const [warmupChecked,setWarmupChecked] = useState({});
+  const [setsReps,setSetsReps]   = useState({});
+  const [weights,setWeights]     = useState(() => ls.get('wt-weights',{}));
+  const [saved,setSaved]         = useState(false);
+  const [nameOverrides,setNameOverrides] = useState({});
+  const [editingName,setEditingName]     = useState(null);
+  const [sessionNote,setSessionNote]     = useState('');
+  const [dayExercises,setDayExercises]   = useState(()=>SESSION_DEFAULTS.exercises.map(e=>({...e})));
+  const [setCounts,setSetCounts]         = useState(()=>Object.fromEntries(SESSION_DEFAULTS.exercises.map(e=>[e.id,e.sets])));
+  const [addingEx,setAddingEx]           = useState(false);
+  const [newExName,setNewExName]         = useState('');
 
-  const setVariant = (exId, key) => {
-    const next = { ...variants, [exId]: key };
-    setVariants(next);
-    ls.set('wt-variants', next);
+  const saveWeight  = (id,val) => { const n={...weights,[id]:val}; setWeights(n); ls.set('wt-weights',n); };
+  const toggleWarmup = (item)  => setWarmupChecked(p=>({...p,[item]:!p[item]}));
+  const setReps     = (exId,i,val) => { setSetsReps(p=>({...p,[`${exId}|${i}`]:val})); setSaved(false); };
+  const isSetDone   = (exId,i) => !!(setsReps[`${exId}|${i}`]>0);
+  const getReps     = (exId,i) => setsReps[`${exId}|${i}`]||'';
+  const isWarmupDone = (item)  => !!warmupChecked[item];
+  const getSetCount  = (ex)    => setCounts[ex.id]||ex.sets;
+
+  const changeSetCount = (exId, delta) => {
+    setSetCounts(p=>({...p,[exId]:Math.max(1,(p[exId]||3)+delta)}));
   };
 
-  const saveWeight = (id, val) => {
-    const next = { ...weights, [id]: val };
-    setWeights(next);
-    ls.set('wt-weights', next);
+  const removeExercise = (exId) => {
+    setDayExercises(p=>p.filter(e=>e.id!==exId));
   };
 
-  const toggleWarmup = (item) => setWarmupChecked(p => ({ ...p, [item]: !p[item] }));
-  const setReps      = (exId, i, val) => { const k = `${exId}|${i}`; setSetsReps(p => ({ ...p, [k]: val })); setSaved(false); };
-  const isSetDone    = (exId, i) => !!(setsReps[`${exId}|${i}`] > 0);
-  const getReps      = (exId, i) => setsReps[`${exId}|${i}`] || '';
-  const isWarmupDone = (item)    => !!warmupChecked[item];
+  const addExercise = () => {
+    if (!newExName.trim()) return;
+    const id = `custom-${Date.now()}`;
+    const ex = { id, name:newExName.trim(), sets:3, reps:'10–12', rest:'60s', isCustom:true };
+    setDayExercises(p=>[...p,ex]);
+    setSetCounts(p=>({...p,[id]:3}));
+    setNewExName(''); setAddingEx(false);
+  };
 
-  const totalItems = SESSION.warmup.length + SESSION.exercises.reduce((a, e) => a + e.sets, 0);
-  const doneItems  =
-    SESSION.warmup.filter(w => isWarmupDone(w)).length +
-    SESSION.exercises.reduce((a, e) => a + Array.from({ length: e.sets }, (_, i) => isSetDone(e.id, i)).filter(Boolean).length, 0);
-  const pct      = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
-  const complete = pct === 100;
+  const totalItems = SESSION_DEFAULTS.warmup.length + dayExercises.reduce((a,e)=>a+getSetCount(e),0);
+  const doneItems  = SESSION_DEFAULTS.warmup.filter(w=>isWarmupDone(w)).length +
+    dayExercises.reduce((a,e)=>a+Array.from({length:getSetCount(e)},(_,i)=>isSetDone(e.id,i)).filter(Boolean).length,0);
+  const pct     = totalItems>0 ? Math.round((doneItems/totalItems)*100) : 0;
+  const complete = pct===100;
 
   const clearAll = () => {
-    setSetsReps({});
-    setWarmupChecked({});
-    setWeights({});
-    setNameOverrides({});
-    setEditingName(null);
-    setSessionNote('');
-    ls.set('wt-weights', {});
-    setSaved(false);
+    setSetsReps({}); setWarmupChecked({}); setWeights({}); setNameOverrides({});
+    setEditingName(null); setSessionNote(''); setSaved(false);
+    setDayExercises(SESSION_DEFAULTS.exercises.map(e=>({...e})));
+    setSetCounts(Object.fromEntries(SESSION_DEFAULTS.exercises.map(e=>[e.id,e.sets])));
+    ls.set('wt-weights',{});
   };
 
   const saveSession = () => {
     const entry = {
-      id:        Date.now().toString(),
+      id: Date.now().toString(),
       entryType: 'weights',
-      date:      todayStr(),
-      session:   'Weights',
-      note:      sessionNote.trim(),
-      exercises: SESSION.exercises.map(ex => {
-        const activeVariant = ex.variants ? ex.variants.find(v => v.key === (variants[ex.id] || ex.variants[0].key)) : null;
-        const weightId = activeVariant ? `${ex.id}-${activeVariant.key}` : ex.id;
-        const displayName = nameOverrides[ex.id] || (activeVariant ? activeVariant.name : ex.name);
+      date: todayStr(),
+      session: 'Weights',
+      note: sessionNote.trim(),
+      exercises: dayExercises.map(ex => {
+        const displayName = nameOverrides[ex.id] || ex.name;
+        const count = getSetCount(ex);
         return {
-          name:          displayName,
-          weight:        Array.from({ length: ex.sets }, (_, i) => weights[`${weightId}|${i}`] || null),
-          setsCompleted: Array.from({ length: ex.sets }, (_, i) => isSetDone(ex.id, i)).filter(Boolean).length,
-          totalSets:     ex.sets,
-          reps:          Array.from({ length: ex.sets }, (_, i) => setsReps[`${ex.id}|${i}`] || null),
+          name: displayName,
+          weight: Array.from({length:count},(_,i)=>weights[`${ex.id}|${i}`]||null),
+          reps:   Array.from({length:count},(_,i)=>setsReps[`${ex.id}|${i}`]||null),
+          setsCompleted: Array.from({length:count},(_,i)=>isSetDone(ex.id,i)).filter(Boolean).length,
+          totalSets: count,
         };
       })
     };
-    const history = ls.get('wt-history', []);
-    ls.set('wt-history', [...history, entry]);
-    clearAll();
-    setSaved(true);
+    ls.set('wt-history',[...ls.get('wt-history',[]),entry]);
+    clearAll(); setSaved(true);
   };
 
-  if (view === 'history') return <HistoryScreen onBack={() => setView('workout')} />;
-  if (view === 'cardio')  return <CardioScreen  onBack={() => setView('workout')} />;
+  if (view==='history')    return <HistoryScreen   onBack={()=>setView('workout')}/>;
+  if (view==='cardio')     return <CardioScreen    onBack={()=>setView('workout')}/>;
+  if (view==='weightlog')  return <WeightLogScreen onBack={()=>setView('workout')}/>;
+
+  const btnStyle = { background:'#1c1c1c', border:'1px solid #2a2a2a', borderRadius:9, color:'#888', fontSize:11, fontFamily:mono, padding:'8px 10px', cursor:'pointer', letterSpacing:1, textTransform:'uppercase' };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#111', color: '#f0f0f0', fontFamily: sans, maxWidth: 440, margin: '0 auto', paddingBottom: 80 }}>
+    <div style={{minHeight:'100vh',background:'#111',color:'#f0f0f0',fontFamily:sans,maxWidth:440,margin:'0 auto',paddingBottom:80}}>
 
       {/* Header */}
-      <div style={{ padding: '28px 20px 16px', background: '#111', position: 'sticky', top: 0, zIndex: 10, borderBottom: '1px solid #2a2a2a' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+      <div style={{padding:'28px 20px 16px',background:'#111',position:'sticky',top:0,zIndex:10,borderBottom:'1px solid #2a2a2a'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
           <div>
-            <div style={{ fontSize: 11, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 4, textTransform: 'uppercase' }}>Full Body · 3×/Week</div>
-            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: '#fff' }}>Ruben's Workout Tracker</div>
+            <div style={{fontSize:11,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:4,textTransform:'uppercase'}}>Full Body · 3×/Week</div>
+            <div style={{fontSize:26,fontWeight:700,letterSpacing:-0.5,color:'#fff'}}>Ruben's Workout Tracker</div>
           </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <button onClick={() => setView('cardio')} style={{
-              background: 'transparent', border: '1px solid #fff', borderRadius: 9,
-              color: '#fff', fontSize: 11, fontFamily: mono, padding: '8px 10px', cursor: 'pointer',
-              letterSpacing: 1, textTransform: 'uppercase'
-            }}>Cardio</button>
-            <button onClick={() => setView('history')} style={{
-              background: 'transparent', border: '1px solid #fff', borderRadius: 9,
-              color: '#fff', fontSize: 11, fontFamily: mono, padding: '8px 10px', cursor: 'pointer',
-              letterSpacing: 1, textTransform: 'uppercase'
-            }}>History</button>
+          <div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap',justifyContent:'flex-end'}}>
+            <button onClick={()=>setView('weightlog')} style={btnStyle}>Weight</button>
+            <button onClick={()=>setView('cardio')}    style={btnStyle}>Cardio</button>
+            <button onClick={()=>setView('history')}   style={btnStyle}>History</button>
           </div>
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#666', marginBottom: 6, fontFamily: mono }}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#666',marginBottom:6,fontFamily:mono}}>
           <span>PROGRESS</span>
-          <span style={{ color: complete ? '#6dde6d' : pct > 0 ? '#ccc' : '#666' }}>{pct}%</span>
+          <span style={{color:complete?'#6dde6d':pct>0?'#ccc':'#666'}}>{pct}%</span>
         </div>
-        <div style={{ height: 3, background: '#333', borderRadius: 2 }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: complete ? '#6dde6d' : '#888', borderRadius: 2, transition: 'width 0.3s ease' }} />
+        <div style={{height:3,background:'#333',borderRadius:2}}>
+          <div style={{height:'100%',width:`${pct}%`,background:complete?'#6dde6d':'#888',borderRadius:2,transition:'width 0.3s ease'}}/>
         </div>
       </div>
 
-      <div style={{ padding: '20px 20px 0' }}>
+      <div style={{padding:'20px 20px 0'}}>
 
         {/* Warm-up */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', marginBottom: 10, textTransform: 'uppercase', fontFamily: mono }}>Warm-Up · 5–8 min</div>
-          {SESSION.warmup.map(item => {
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:10,letterSpacing:3,color:'#666',marginBottom:10,textTransform:'uppercase',fontFamily:mono}}>Warm-Up · 5–8 min</div>
+          {SESSION_DEFAULTS.warmup.map(item => {
             const done = isWarmupDone(item);
             return (
-              <div key={item} onClick={() => toggleWarmup(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #2a2a2a', cursor: 'pointer' }}>
-                <div style={{
-                  width: 22, height: 22, borderRadius: 5,
-                  border: done ? 'none' : '2px solid #555',
-                  background: done ? '#6dde6d' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s'
-                }}>
-                  {done && <span style={{ color: '#000', fontSize: 12, fontWeight: 'bold' }}>✓</span>}
+              <div key={item} onClick={()=>toggleWarmup(item)} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid #2a2a2a',cursor:'pointer'}}>
+                <div style={{width:22,height:22,borderRadius:5,border:done?'none':'2px solid #555',background:done?'#6dde6d':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.15s'}}>
+                  {done && <span style={{color:'#000',fontSize:12,fontWeight:'bold'}}>✓</span>}
                 </div>
-                <span style={{ fontSize: 15, color: done ? '#444' : '#ccc', textDecoration: done ? 'line-through' : 'none', transition: 'all 0.15s' }}>{item}</span>
+                <span style={{fontSize:15,color:done?'#444':'#ccc',textDecoration:done?'line-through':'none',transition:'all 0.15s'}}>{item}</span>
               </div>
             );
           })}
         </div>
 
         {/* Exercises */}
-        <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', marginBottom: 12, textTransform: 'uppercase', fontFamily: mono }}>Exercises</div>
+        <div style={{fontSize:10,letterSpacing:3,color:'#666',marginBottom:12,textTransform:'uppercase',fontFamily:mono}}>Exercises</div>
 
-        {SESSION.exercises.map(ex => {
-          const activeVariant = ex.variants ? ex.variants.find(v => v.key === (variants[ex.id] || ex.variants[0].key)) : null;
-          const defaultName = activeVariant ? activeVariant.name : ex.name;
-          const name     = nameOverrides[ex.id] || defaultName;
-          const note     = activeVariant ? activeVariant.note     : ex.note;
-          const flagNote = activeVariant ? activeVariant.flagNote : ex.flagNote;
-          const weightId = activeVariant ? `${ex.id}-${activeVariant.key}` : ex.id;
+        {dayExercises.map(ex => {
+          const count      = getSetCount(ex);
+          const doneSets   = Array.from({length:count},(_,i)=>isSetDone(ex.id,i)).filter(Boolean).length;
+          const allDone    = doneSets===count;
+          const name       = nameOverrides[ex.id]||ex.name;
+          const defaultName = ex.name;
 
-          const doneSets = Array.from({ length: ex.sets }, (_, i) => isSetDone(ex.id, i)).filter(Boolean).length;
-          const allDone  = doneSets === ex.sets;
           return (
-            <div key={ex.id} style={{
-              marginBottom: 10,
-              background: allDone ? '#0d1f0d' : '#242424',
-              border: `1px solid ${allDone ? '#2a5a2a' : '#383838'}`,
-              borderRadius: 14, overflow: 'hidden', transition: 'all 0.2s'
-            }}>
-              {ex.isFinisher && (
-                <div style={{ background: '#161616', padding: '5px 14px', fontSize: 9, letterSpacing: 3, color: '#666', textTransform: 'uppercase', borderBottom: '1px solid #222', fontFamily: mono }}>Finisher</div>
-              )}
-              <div style={{ padding: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <div style={{ flex: 1, paddingRight: 8 }}>
-                    {editingName === ex.id ? (
-                      <input
-                        autoFocus
-                        value={nameOverrides[ex.id] !== undefined ? nameOverrides[ex.id] : name}
-                        onChange={e => setNameOverrides(p => ({ ...p, [ex.id]: e.target.value }))}
-                        onBlur={() => setEditingName(null)}
+            <div key={ex.id} style={{marginBottom:10,background:allDone?'#0d1f0d':'#242424',border:`1px solid ${allDone?'#2a5a2a':'#383838'}`,borderRadius:14,overflow:'hidden',transition:'all 0.2s'}}>
+              <div style={{padding:16}}>
+                {/* Name row */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                  <div style={{flex:1,paddingRight:8}}>
+                    {editingName===ex.id ? (
+                      <input autoFocus value={nameOverrides[ex.id]!==undefined?nameOverrides[ex.id]:name}
+                        onChange={e=>setNameOverrides(p=>({...p,[ex.id]:e.target.value}))}
+                        onBlur={()=>setEditingName(null)}
                         placeholder={defaultName}
-                        style={{
-                          background: '#111', border: '1px solid #888', borderRadius: 6,
-                          color: '#fff', fontSize: 15, fontWeight: 600, fontFamily: sans,
-                          padding: '4px 8px', width: '100%', outline: 'none', marginBottom: 4
-                        }}
+                        style={{background:'#111',border:'1px solid #888',borderRadius:6,color:'#fff',fontSize:15,fontWeight:600,fontFamily:sans,padding:'4px 8px',width:'100%',outline:'none',marginBottom:4}}
                       />
                     ) : (
-                      <div
-                        onClick={() => setEditingName(ex.id)}
-                        style={{ fontSize: 15, fontWeight: 600, color: allDone ? '#4a8a4a' : '#fff', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {name}
-                        <span style={{ fontSize: 10, color: '#555' }}>✎</span>
+                      <div onClick={()=>setEditingName(ex.id)} style={{fontSize:15,fontWeight:600,color:allDone?'#4a8a4a':'#fff',lineHeight:1.4,display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+                        {name}<span style={{fontSize:10,color:'#555'}}>✎</span>
                       </div>
                     )}
-                    <div style={{ fontSize: 12, color: '#888', marginTop: 4, fontFamily: mono }}>{ex.sets} sets · {ex.reps} reps · rest {ex.rest}</div>
+                    {/* Set count controls */}
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginTop:5}}>
+                      <span style={{fontSize:12,color:'#888',fontFamily:mono}}>{count} sets · {ex.reps} reps · rest {ex.rest}</span>
+                      <button onClick={()=>changeSetCount(ex.id,-1)} style={{background:'#333',border:'none',color:'#aaa',borderRadius:4,width:20,height:20,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>−</button>
+                      <button onClick={()=>changeSetCount(ex.id,+1)} style={{background:'#333',border:'none',color:'#aaa',borderRadius:4,width:20,height:20,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>+</button>
+                    </div>
                   </div>
-                  {allDone && <span style={{ color: '#6dde6d', fontSize: 18, flexShrink: 0 }}>✓</span>}
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+                    {allDone && <span style={{color:'#6dde6d',fontSize:18}}>✓</span>}
+                    <button onClick={()=>removeExercise(ex.id)} style={{background:'none',border:'none',color:'#555',fontSize:16,cursor:'pointer',padding:'2px 4px',lineHeight:1}}>✕</button>
+                  </div>
                 </div>
 
-                {/* Variant toggle */}
-                {ex.variants && (
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-                    {ex.variants.map(v => {
-                      const active = (variants[ex.id] || ex.variants[0].key) === v.key;
-                      return (
-                        <button key={v.key} onClick={() => setVariant(ex.id, v.key)} style={{
-                          padding: '5px 12px', borderRadius: 6, fontSize: 11, fontFamily: mono,
-                          fontWeight: 600, cursor: 'pointer', letterSpacing: 1,
-                          background: active ? '#fff' : 'transparent',
-                          color: active ? '#000' : '#666',
-                          border: active ? 'none' : '1px solid #444',
-                          transition: 'all 0.15s'
-                        }}>{v.label}</button>
-                      );
-                    })}
-                  </div>
-                )}
+                {ex.flagNote && <div style={{fontSize:12,color:'#e6c200',background:'#1f1a00',padding:'8px 12px',borderRadius:8,marginBottom:12,lineHeight:1.5,border:'1px solid #3a3000'}}>⚠ {ex.flagNote}</div>}
+                {ex.note     && <div style={{fontSize:12,color:'#888',marginBottom:12,fontStyle:'italic',lineHeight:1.5}}>{ex.note}</div>}
 
-                {flagNote && (
-                  <div style={{ fontSize: 12, color: '#e6c200', background: '#1f1a00', padding: '8px 12px', borderRadius: 8, marginBottom: 12, lineHeight: 1.5, border: '1px solid #3a3000' }}>⚠ {flagNote}</div>
-                )}
-                {note && (
-                  <div style={{ fontSize: 12, color: '#888', marginBottom: 12, fontStyle: 'italic', lineHeight: 1.5 }}>{note}</div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {Array.from({ length: ex.sets }, (_, i) => {
-                    const done = isSetDone(ex.id, i);
-                    const reps = getReps(ex.id, i);
-                    const setWeightId = `${weightId}|${i}`;
+                {/* Sets */}
+                <div style={{display:'flex',alignItems:'flex-end',gap:10,flexWrap:'wrap',justifyContent:'center'}}>
+                  {Array.from({length:count},(_,i) => {
+                    const done = isSetDone(ex.id,i);
+                    const reps = getReps(ex.id,i);
+                    const swId = `${ex.id}|${i}`;
                     return (
-                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 9, color: done ? '#6dde6d' : '#555', fontFamily: mono, letterSpacing: 1, textTransform: 'uppercase' }}>Set {i+1}</span>
-                        <input
-                          type="number"
-                          placeholder="kg"
-                          value={weights[setWeightId] || ''}
-                          onChange={e => saveWeight(setWeightId, e.target.value)}
-                          style={{
-                            width: 52, height: 48, borderRadius: 9, textAlign: 'center',
-                            fontSize: 15, fontWeight: 700, fontFamily: mono,
-                            background: '#111',
-                            color: weights[setWeightId] ? '#fff' : '#555',
-                            border: '1px solid #444',
-                            outline: 'none'
-                          }}
-                        />
-                        <span style={{ fontSize: 9, color: '#444', fontFamily: mono }}>kg</span>
-                        <input
-                          type="number"
-                          placeholder={ex.reps.split('–')[0]}
-                          value={reps}
-                          onChange={e => setReps(ex.id, i, e.target.value)}
-                          style={{
-                            width: 52, height: 36, borderRadius: 7, textAlign: 'center',
-                            fontSize: 13, fontFamily: mono,
-                            background: done ? '#6dde6d' : '#111',
-                            color: done ? '#000' : '#bbb',
-                            border: done ? 'none' : '2px solid #555',
-                            outline: 'none', transition: 'all 0.15s'
-                          }}
-                        />
-                        <span style={{ fontSize: 9, color: '#444', fontFamily: mono }}>reps</span>
+                      <div key={i} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+                        <span style={{fontSize:9,color:done?'#6dde6d':'#555',fontFamily:mono,letterSpacing:1,textTransform:'uppercase'}}>Set {i+1}</span>
+                        <input type="number" placeholder="kg" value={weights[swId]||''} onChange={e=>saveWeight(swId,e.target.value)}
+                          style={{width:52,height:48,borderRadius:9,textAlign:'center',fontSize:15,fontWeight:700,fontFamily:mono,background:'#111',color:weights[swId]?'#fff':'#555',border:'1px solid #444',outline:'none'}}/>
+                        <span style={{fontSize:9,color:'#444',fontFamily:mono}}>kg</span>
+                        <input type="number" placeholder={ex.reps.split('–')[0]} value={reps} onChange={e=>setReps(ex.id,i,e.target.value)}
+                          style={{width:52,height:36,borderRadius:7,textAlign:'center',fontSize:13,fontFamily:mono,background:done?'#6dde6d':'#111',color:done?'#000':'#bbb',border:done?'none':'2px solid #555',outline:'none',transition:'all 0.15s'}}/>
+                        <span style={{fontSize:9,color:'#444',fontFamily:mono}}>reps</span>
                       </div>
                     );
                   })}
@@ -554,53 +492,53 @@ function WorkoutTracker() {
           );
         })}
 
-        {/* Session note */}
-        <div style={{ marginTop: 24, background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 }}>
-          <div style={{ fontSize: 10, letterSpacing: 3, color: '#666', fontFamily: mono, marginBottom: 10, textTransform: 'uppercase' }}>Session Notes</div>
-          <textarea
-            placeholder="How did it feel? Anything to note..."
-            value={sessionNote}
-            onChange={e => setSessionNote(e.target.value)}
-            rows={3}
-            style={{
-              width: '100%', background: '#111', border: '1px solid #333', borderRadius: 9,
-              color: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: sans,
-              outline: 'none', resize: 'none', lineHeight: 1.6
-            }}
-          />
+        {/* Add exercise */}
+        {addingEx ? (
+          <div style={{background:'#1c1c1c',border:'1px solid #383838',borderRadius:14,padding:16,marginBottom:10}}>
+            <div style={{fontSize:10,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:10,textTransform:'uppercase'}}>Add Exercise</div>
+            <input autoFocus type="text" placeholder="Exercise name" value={newExName} onChange={e=>setNewExName(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&addExercise()}
+              style={{background:'#111',border:'1px solid #555',borderRadius:8,color:'#fff',fontSize:14,fontFamily:sans,padding:'10px 12px',width:'100%',outline:'none',marginBottom:10}}/>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={addExercise} style={{flex:1,padding:'10px',background:newExName.trim()?'#fff':'#333',color:newExName.trim()?'#000':'#666',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:mono}}>Add</button>
+              <button onClick={()=>{setAddingEx(false);setNewExName('');}} style={{flex:1,padding:'10px',background:'transparent',color:'#666',border:'1px solid #333',borderRadius:8,fontSize:13,cursor:'pointer',fontFamily:mono}}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={()=>setAddingEx(true)} style={{width:'100%',padding:'12px',background:'transparent',color:'#555',border:'1px dashed #333',borderRadius:12,fontSize:13,cursor:'pointer',fontFamily:mono,marginBottom:4}}>
+            + Add exercise
+          </button>
+        )}
+
+        {/* Notes */}
+        <div style={{marginTop:20,background:'#1c1c1c',border:'1px solid #2a2a2a',borderRadius:14,padding:16}}>
+          <div style={{fontSize:10,letterSpacing:3,color:'#666',fontFamily:mono,marginBottom:10,textTransform:'uppercase'}}>Notes</div>
+          <textarea placeholder="How did it feel? Anything to note..." value={sessionNote} onChange={e=>setSessionNote(e.target.value)} rows={3}
+            style={{width:'100%',background:'#111',border:'1px solid #333',borderRadius:9,color:'#fff',padding:'10px 12px',fontSize:14,fontFamily:sans,outline:'none',resize:'none',lineHeight:1.6}}/>
         </div>
 
-        {/* Save / Complete */}
-        <div style={{ marginTop: 24, marginBottom: 40, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Save / Clear */}
+        <div style={{marginTop:16,marginBottom:40,display:'flex',flexDirection:'column',gap:10}}>
           {complete ? (
             <div>
-              <div style={{ padding: '22px 20px', background: '#0d1f0d', border: '1px solid #2a5a2a', borderRadius: 14, textAlign: 'center', marginBottom: 12 }}>
-                <div style={{ fontSize: 30, marginBottom: 10 }}>✓</div>
-                <div style={{ fontSize: 14, color: '#6dde6d', letterSpacing: 2, fontFamily: mono }}>SESSION COMPLETE</div>
-                <div style={{ fontSize: 13, color: '#4a7a4a', marginTop: 8 }}>Good work. Rest up.</div>
+              <div style={{padding:'22px 20px',background:'#0d1f0d',border:'1px solid #2a5a2a',borderRadius:14,textAlign:'center',marginBottom:12}}>
+                <div style={{fontSize:30,marginBottom:10}}>✓</div>
+                <div style={{fontSize:14,color:'#6dde6d',letterSpacing:2,fontFamily:mono}}>SESSION COMPLETE</div>
+                <div style={{fontSize:13,color:'#4a7a4a',marginTop:8}}>Good work. Rest up.</div>
               </div>
-              <button onClick={saveSession} disabled={saved} style={{
-                width: '100%', padding: '14px', background: saved ? '#1a1a1a' : '#fff',
-                color: saved ? '#444' : '#000', border: saved ? '1px solid #2a2a2a' : 'none',
-                borderRadius: 12, fontSize: 14, fontWeight: 700,
-                cursor: saved ? 'default' : 'pointer', fontFamily: mono, letterSpacing: 1, transition: 'all 0.2s', marginBottom: 10
-              }}>{saved ? '✓ Saved to history' : 'Save session to history'}</button>
+              <button onClick={saveSession} disabled={saved} style={{width:'100%',padding:'14px',background:saved?'#1a1a1a':'#fff',color:saved?'#444':'#000',border:saved?'1px solid #2a2a2a':'none',borderRadius:12,fontSize:14,fontWeight:700,cursor:saved?'default':'pointer',fontFamily:mono,letterSpacing:1,transition:'all 0.2s',marginBottom:10}}>
+                {saved?'✓ Saved to history':'Save session to history'}
+              </button>
             </div>
-          ) : pct > 0 ? (
-            <button onClick={saveSession} disabled={saved} style={{
-              width: '100%', padding: '14px', background: 'transparent',
-              color: saved ? '#444' : '#666', border: `1px solid ${saved ? '#222' : '#333'}`,
-              borderRadius: 12, fontSize: 13, fontWeight: 600,
-              cursor: saved ? 'default' : 'pointer', fontFamily: mono, letterSpacing: 1
-            }}>{saved ? '✓ Saved' : 'Save partial session'}</button>
+          ) : pct>0 ? (
+            <button onClick={saveSession} disabled={saved} style={{width:'100%',padding:'14px',background:'transparent',color:saved?'#444':'#666',border:`1px solid ${saved?'#222':'#333'}`,borderRadius:12,fontSize:13,fontWeight:600,cursor:saved?'default':'pointer',fontFamily:mono,letterSpacing:1}}>
+              {saved?'✓ Saved':'Save partial session'}
+            </button>
           ) : null}
-          {pct > 0 && (
-            <button onClick={clearAll} style={{
-              width: '100%', padding: '12px', background: 'transparent',
-              color: '#884444', border: '1px solid #3a1a1a',
-              borderRadius: 12, fontSize: 13, fontWeight: 600,
-              cursor: 'pointer', fontFamily: mono, letterSpacing: 1
-            }}>Clear session</button>
+          {pct>0 && (
+            <button onClick={clearAll} style={{width:'100%',padding:'12px',background:'transparent',color:'#884444',border:'1px solid #3a1a1a',borderRadius:12,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:mono,letterSpacing:1}}>
+              Clear session
+            </button>
           )}
         </div>
       </div>
